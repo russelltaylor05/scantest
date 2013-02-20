@@ -9,12 +9,8 @@
 #include <ctype.h>
 #include <stdint.h>
 
-#define N 100
+#define N 64
 
-/* 
- * Handles CUDA errors, taking from provided sample code on clupo site
- */
-/*
 static void HandleError( cudaError_t err, const char * file, int line)
 {
   if(err !=cudaSuccess){
@@ -23,21 +19,59 @@ static void HandleError( cudaError_t err, const char * file, int line)
   }
 }
 #define HANDLE_ERROR( err ) (HandleError( err, __FILE__, __LINE__ ))
-*/
 
 
-__global__ void MMKernel(int *deviceInput)
+
+__global__ void scanKernel(int *deviceInput, int *deviceOutput, int n)
 {
-  printf("hi");
-  printf("%d, \n", threadIdx.x);
+
+  __shared__ int temp[128];
+  int index = threadIdx.y * 8 + threadIdx.x;
+  int pout = 0;
+  int pin = 1;
+  
+  temp[pout * n + index] = (index > 0) ? deviceInput[index - 1] : 0;
+  __syncthreads();
+  
+  for (int offset = 1; offset < n; offset *= 2) {
+
+      pout = 1 - pout;
+      pin  = 1 - pout;
+      if(index == 1) 
+        printf("%d, ", pout);
+
+      if (index >= offset) {
+        temp[pout * n + index] += temp[ pin * n + index - offset];
+      } else  {
+        temp[pout * n + index] = temp[ pin * n + index];        
+      }
+      __syncthreads();  
+  }
+    
+  deviceOutput[index] = temp[pout * n + index];
+  
 }
 
 
-__global__ void test()
+__global__ void simpleSumReduction(int *deviceInput, int *deviceOutput, int n)
 {
-  printf("hi");
-  printf("%d, \n", threadIdx.x);
+  int index = threadIdx.x;
+  int stride;
+  int i;
+  deviceOutput[index] = 0;
+  
+  for (i = N/2;  i > 0; i >>= 1) {
+    __syncthreads();   
+    if(index < i) {
+      if(i > 31) {
+        deviceOutput[index] = deviceInput[index] + deviceInput[index + i];
+      } else  {
+        deviceOutput[index] = deviceOutput[index] + deviceOutput[index + i];
+      }      
+    }
+  } 
 }
+
 
 
 int main (int argc, const char * argv[])
@@ -48,38 +82,80 @@ int main (int argc, const char * argv[])
   int *deviceInput, *deviceOutput;
   int i = 0;
   int size;
+  int sum = 0;
   
+  /* Initialize Input */
   for (i = 0; i < N; i++) {
     inputArray[i] = i;
   }
+  printf("INPUT array\n");
+  for (i = 0; i < N; i++) { 
+    printf("%d, ", inputArray[i]);
+    if(!((i+1) % 8) && i != 0)
+      printf("\n");
+  }
+  printf("\n");
+
   
+  /* CPU Scan */
   outArray[0] = 0;
   for(i = 1; i < N; i++) {
     outArray[i] = outArray[i-1] + inputArray[i];
-  }
+  }  
+  //printf("CPU Output\n");
+  //for (i = 0; i < N; i++) { printf("%d, ", outArray[i]);  }
+  //printf("\n\n\n");
+
   
-  for (i = 0; i < N; i++) {
-    //printf("%d, ", outArray[i]);
+  /* CPU Sum */
+  for(i = 1; i < N; i++) {
+    sum += inputArray[i];
   }
+  printf("CPU sum: %d\n\n", sum);
+
+  
+
+
+
+  /* clear output */
+  for (i = 0; i < N; i++) {
+    outArray[i] = 0;
+  }
+
 
   /* Malloc and Copy space on GPU */
   size = N * sizeof(int);
-  cudaMalloc(&deviceInput, size);
-  cudaMemcpy(deviceInput, inputArray, size, cudaMemcpyHostToDevice);
+  HANDLE_ERROR(cudaMalloc(&deviceInput, size));
+  HANDLE_ERROR(cudaMemcpy(deviceInput, inputArray, size, cudaMemcpyHostToDevice));
 
   size = N * sizeof(int);
-  cudaMalloc(&deviceOutput, size);
+  HANDLE_ERROR(cudaMalloc(&deviceOutput, size));
 
   /*
   dim3 dimGrid(1,1);
-  dim3 dimBlock(10,10);
-  MMKernel<<<dimGrid,dimBlock>>>(deviceInput);
+  dim3 dimBlock(8,8);
+  scanKernel<<<dimGrid,dimBlock>>>(deviceInput, deviceOutput, N);
   */
-  test<<<1,1>>>();
+  simpleSumReduction<<<1,N>>>(deviceInput, deviceOutput, N);
 
-  cudaMemcpy(outArray, deviceOutput, size, cudaMemcpyDeviceToHost);    
-  cudaFree(deviceInput);
-  cudaFree(deviceOutput);
+  HANDLE_ERROR(cudaMemcpy(outArray, deviceOutput, size, cudaMemcpyDeviceToHost)); 
+  HANDLE_ERROR(cudaFree(deviceInput));
+  HANDLE_ERROR(cudaFree(deviceOutput));
+  
+  
+  
+  //printf("Results: %d\n", outArray[0]);
+
+  /* Print Array */
+  printf("GPU Output\n");
+  for (i = 0; i < N; i++) { 
+    printf("%d, ", outArray[i]);
+    if(!((i+1) % 8) && i != 0)
+      printf("\n");
+  }
+  printf("\n\n");
+
+  
 
   /*
   size = Brow * Bcol * sizeof(TYPEUSE);

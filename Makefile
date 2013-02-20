@@ -12,7 +12,7 @@ scan: $(SRCFILES)
 	nvcc $(NVFLAGS) -o scan $^
 
 run: scan
-	./scan  
+	@./scan  
 
 
 double: $(SRCFILES)
