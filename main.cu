@@ -56,10 +56,9 @@ __global__ void scanKernel(int *deviceInput, int *deviceOutput, int n)
 __global__ void simpleSumReduction(int *deviceInput, int *deviceOutput, int n)
 {
   int index = threadIdx.x;
-  int stride;
   int i;
   deviceOutput[index] = 0;
-  
+ /* 
   for (i = N/2;  i > 0; i >>= 1) {
     __syncthreads();   
     if(index < i) {
@@ -69,7 +68,8 @@ __global__ void simpleSumReduction(int *deviceInput, int *deviceOutput, int n)
         deviceOutput[index] = deviceOutput[index] + deviceOutput[index + i];
       }      
     }
-  } 
+  }
+*/
 }
 
 
@@ -96,6 +96,13 @@ int main (int argc, const char * argv[])
   }
   printf("\n");
 
+  /* Malloc and Copy space on GPU */
+  size = N * sizeof(int);
+  HANDLE_ERROR(cudaMalloc(&deviceInput, size));
+  HANDLE_ERROR(cudaMemcpy(deviceInput, inputArray, size, cudaMemcpyHostToDevice));
+
+  size = N * sizeof(int);
+  HANDLE_ERROR(cudaMalloc(&deviceOutput, size));
   
   /* CPU Scan */
   outArray[0] = 0;
@@ -113,23 +120,12 @@ int main (int argc, const char * argv[])
   }
   printf("CPU sum: %d\n\n", sum);
 
-  
-
-
-
   /* clear output */
   for (i = 0; i < N; i++) {
     outArray[i] = 0;
   }
 
 
-  /* Malloc and Copy space on GPU */
-  size = N * sizeof(int);
-  HANDLE_ERROR(cudaMalloc(&deviceInput, size));
-  HANDLE_ERROR(cudaMemcpy(deviceInput, inputArray, size, cudaMemcpyHostToDevice));
-
-  size = N * sizeof(int);
-  HANDLE_ERROR(cudaMalloc(&deviceOutput, size));
 
   /*
   dim3 dimGrid(1,1);
@@ -142,9 +138,6 @@ int main (int argc, const char * argv[])
   HANDLE_ERROR(cudaFree(deviceInput));
   HANDLE_ERROR(cudaFree(deviceOutput));
   
-  
-  
-  //printf("Results: %d\n", outArray[0]);
 
   /* Print Array */
   printf("GPU Output\n");
@@ -154,30 +147,6 @@ int main (int argc, const char * argv[])
       printf("\n");
   }
   printf("\n\n");
-
-  
-
-  /*
-  size = Brow * Bcol * sizeof(TYPEUSE);
-  cudaMalloc(&B_d, size);
-  cudaMemcpy(B_d, Bmatrix, size, cudaMemcpyHostToDevice);
-
-  size = Arow * Bcol * sizeof(TYPEUSE);
-  cudaMalloc(&C_d, size);
-  
-  blockRow = (Arow+31) / 32;
-  blockCol = (Bcol+31) / 32;
-    
-  dim3 dimGrid(blockCol,blockRow);
-  dim3 dimBlock(32,32);
-  MMKernel<<<dimGrid,dimBlock>>>(deviceInput);
-
-  cudaMemcpy(Cmatrix,C_d,size, cudaMemcpyDeviceToHost);
-
-  output_matrix(Cfile, Cmatrix, Arow, Bcol);
-  
-  //print_matrix(Cmatrix, Arow, Bcol);  
-  */
   
 
   
